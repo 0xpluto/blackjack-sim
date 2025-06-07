@@ -53,7 +53,7 @@ impl GameInPlay {
             let payout = self.game.player_payout();
             self.balance += payout;
             self.stage = Stage::HandOver;
-            return None;
+            return Some(InputNeeded::HandOver);
         }
 
         // Player has made every input they can for this round
@@ -206,4 +206,5 @@ impl Stage {
 pub enum InputNeeded {
     Bet,
     Choice,
+    HandOver,
 }

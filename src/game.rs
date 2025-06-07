@@ -123,6 +123,10 @@ impl Game {
         !self.player_choices().is_empty()
     }
 
+    pub fn player_current_hand(&self) -> &Hand {
+        self.player_hands.get(self.current_hand).unwrap()
+    }
+
     /// Returns true if the player's turn is over
     pub fn take_turn(&mut self, choice: PlayerChoice, balance: &mut u32) {
         match choice {
@@ -159,6 +163,12 @@ impl Game {
                     println!("Hand is bust after doubling down: {}", hand);
                 }
                 self.current_hand += 1; // Move to the next hand after doubling down
+                if self.player_hands.get(self.current_hand).is_some() {
+                    // We split and haven't dealt the next card yet
+                    let card = self.pop_card();
+                    let hand = &mut self.player_hands[self.current_hand];
+                    hand.push(card);
+                }
             }
             PlayerChoice::Split => {
                 self.player_bet.insert(self.current_hand + 1, self.initial_wager);

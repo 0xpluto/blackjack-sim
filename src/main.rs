@@ -2,11 +2,18 @@ use blackjack_sim::{
     config::GameConfig,
     game::Game,
     input::{get_player_bet, get_player_choice, wait_for_player_input},
-    stages::{GameInPlay, InputNeeded},
+    stages::{GameInPlay, InputNeeded}, strategy::BasicStrategy,
 };
 
 fn main() {
     clear_screen();
+    let args: Vec<String> = std::env::args().collect();
+
+    let use_basic = if args.contains(&String::from("-b")) {
+        true
+    } else {
+        false
+    };
 
     let config = GameConfig::default();
     let game = Game::new(config);
@@ -18,7 +25,11 @@ fn main() {
         match game.advance() {
             Some(InputNeeded::Bet) => {
                 println!("{}", game);
-                let bet = get_player_bet();
+                let bet = if use_basic {
+                    100
+                } else {
+                    get_player_bet()
+                };
                 println!("{}", game);
                 if bet == 0 {
                     game.terminate();
@@ -28,12 +39,26 @@ fn main() {
             }
             Some(InputNeeded::Choice) => {
                 println!("{}", game);
-                let choice = get_player_choice(game.game.player_choices());
+                let choices = game.game.player_choices();
+                let choice = if use_basic {
+                    let hand = game.game.player_current_hand();
+                    let dealer_card = game.game.dealer_up_card();
+                    let choice = BasicStrategy::choice(hand, &dealer_card, choices);
+                    println!("Basic strategy suggests: {}", choice);
+                    wait_for_player_input(use_basic);
+                    choice
+                } else {
+                    get_player_choice(choices)
+                };
                 game.player_move(choice);
+            }
+            Some(InputNeeded::HandOver) => {
+                println!("{}", game);
+                wait_for_player_input(use_basic);
             }
             None => {
                 println!("{}", game);
-                wait_for_player_input();
+                wait_for_player_input(use_basic);
             }
         }
         clear_screen();

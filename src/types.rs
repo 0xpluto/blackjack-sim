@@ -237,6 +237,14 @@ impl Hand {
         &self.cards[0] == &self.cards[1]
     }
 
+    pub fn splitable_card(&self) -> Option<CardFace> {
+        if self.can_split() {
+            Some(self.cards[0].clone().face)
+        } else {
+            None
+        }
+    }
+
     pub fn split(mut self) -> (Self, Self) {
         let card = self.cards.pop().unwrap();
         let hand1 = Hand { cards: vec![card.clone()], hide_card: self.hide_card };
