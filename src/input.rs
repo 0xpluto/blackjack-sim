@@ -46,18 +46,18 @@ pub fn get_player_choice(choices: PlayerChoices) -> PlayerChoice {
 fn print_player_choices(choices: PlayerChoices) {
     println!("Available actions:");
     if choices.contains(PlayerChoices::HIT) {
-        println!("  [H] Hit");
+        println!("  [H] [1] Hit");
     }
     if choices.contains(PlayerChoices::STAND) {
-        println!("  [S] Stand");
+        println!("  [S] [2] Stand");
     }
     if choices.contains(PlayerChoices::DOUBLE) {
-        println!("  [D] Double Down");
+        println!("  [D] [3] Double Down");
     }
     if choices.contains(PlayerChoices::SPLIT) {
-        println!("  [P] Split");
+        println!("  [P] [4] Split");
     }
     if choices.contains(PlayerChoices::SURRENDER) {
-        println!("  [R] Surrender");
+        println!("  [R] [5] Surrender");
     }
 }

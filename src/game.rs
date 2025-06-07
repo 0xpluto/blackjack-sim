@@ -1,4 +1,6 @@
-use crate::{config::GameConfig, error::Error, types::{Card, Deck, Hand, HandResult, PlayerChoice, PlayerChoices}};
+use std::collections::HashMap;
+
+use crate::{config::GameConfig, types::{Card, Deck, Hand, HandResult, PlayerChoice, PlayerChoices}};
 
 #[derive(Default)]
 pub struct Game {
@@ -6,16 +8,17 @@ pub struct Game {
     reserves: Deck,
     /// Dealer's hand
     dealer_hand: Hand,
-    /// Dealer is showing all their cards
-    dealer_showing_all: bool,
 
     /// Player's hands
     player_hands: Vec<Hand>,
     /// Index of the current player's hand being played
     /// This is used to track which hand the player is currently playing if the player has split their hand
     current_hand: usize,
-    /// The amount the player has bet for the current game
-    player_bet: u32,
+
+    /// The initial wager
+    initial_wager: u32,
+    /// The amount the player has bet on each hand
+    player_bet: HashMap<usize, u32>,
 
     /// Indicates if the shoe needs to be shuffled
     shoe_needs_shuffling: bool,
@@ -34,30 +37,35 @@ impl Game {
         this
     }
 
-    pub fn start_game(&mut self, player_wager: u32) {
+    pub fn start_game(&mut self, player_wager: u32, balance: &mut u32) {
         self.reset_game_state();
 
-        self.player_bet = player_wager;
+        self.player_bet.insert(0, player_wager); // Store the wager for the first hand
+        self.initial_wager = player_wager;
+        *balance -= player_wager; // Deduct the wager from the player's balance
 
         // Deal initial hands
         self.deal_starting_hands();
     }
 
-    pub fn new_turn(&mut self, player_wager: u32) {
-        self.player_bet = player_wager;
+    pub fn new_turn(&mut self, player_wager: u32, balance: &mut u32) {
+        self.player_bet.insert(0, player_wager); // Store the wager for the first hand
+        self.initial_wager = player_wager;
+        *balance -= player_wager; // Deduct the wager from the player's balance
         self.current_hand = 0;
 
         self.deal_starting_hands();
     }
 
-    pub fn player_balance_change(&self) -> i32 {
-        let mut total_winnings = 0i32;
+    pub fn player_payout(&self) -> u32 {
+        let mut total_winnings = 0;
         for (i, _hand) in self.player_hands.iter().enumerate() {
+            let player_bet = *self.player_bet.get(&i).unwrap();
             match self.player_wins(i) {
-                HandResult::Blackjack => total_winnings += self.config.payout_odds.winning_amount(self.player_bet) as i32,
-                HandResult::Win => total_winnings += self.player_bet as i32,
-                HandResult::Push => {},
-                HandResult::Lose => total_winnings -= self.player_bet as i32, // No winnings for a loss
+                HandResult::Blackjack => total_winnings += self.config.payout_odds.winning_amount(player_bet) + player_bet, // Blackjack pays out at the configured odds plus the original bet
+                HandResult::Win => total_winnings += player_bet * 2,
+                HandResult::Push => total_winnings += player_bet, // Push means no loss, return the bet
+                HandResult::Lose => {}, // No winnings for a loss
                 HandResult::NotFinished => {} // Game not finished, no winnings yet
             }
         }
@@ -98,39 +106,30 @@ impl Game {
         }
     }
 
-    // pub fn post_turn_advancement(&mut self) {
-    //     // Check if the player has any hands left to play
-    //     if self.player_hands.is_empty() {
-    //         return false;
-    //     }
-
-    //     // If the current hand is bust, move to the next hand
-    //     if self.player_hands[self.current_hand].is_bust() {
-    //         if self.current_hand + 1 < self.player_hands.len() {
-    //             self.current_hand += 1;
-    //             return true; // Player has another hand to play
-    //         } else {
-    //             return false; // No more hands left
-    //         }
-    //     }
-
-    //     true // Player can continue with the current hand
-    // }
-
     pub fn player_can_play(&self) -> bool {
-        !self.player_choices().is_empty() || (self.player_hands.len() == 1 && self.player_hands[0].is_blackjack())
+        if self.player_hands.len() == 1 && self.player_hands[0].is_blackjack() {
+            return false; // Player has blackjack, no further actions needed
+        }
+        !self.player_choices().is_empty()
     }
 
     /// Returns true if the player's turn is over
-    pub fn take_turn(&mut self, choice: PlayerChoice) -> Result<(), Error> {
+    pub fn take_turn(&mut self, choice: PlayerChoice, balance: &mut u32) {
         match choice {
             PlayerChoice::Stand => {
                 self.current_hand += 1; // Move to the next hand
+                if self.player_hands.get(self.current_hand).is_some() {
+                    // We split and haven't dealt the next card yet
+                    let card = self.pop_card();
+                    let hand = &mut self.player_hands[self.current_hand];
+                    hand.push(card);
+                }
             }
             PlayerChoice::Hit => {
                 // Draw a card
+                let card = self.pop_card();
                 let hand = &mut self.player_hands[self.current_hand];
-                hand.push(self.reserves.cards.pop().unwrap());
+                hand.push(card);
 
                 if hand.is_bust() {
                     println!("Hand is bust: {}", hand);
@@ -139,14 +138,28 @@ impl Game {
             }
             PlayerChoice::Double => {
                 // Double the bet, draw a card, and stand
+                self.player_bet.insert(self.current_hand, self.initial_wager * 2); // Update the bet for the current hand
+                *balance -= self.initial_wager; // Deduct the doubled bet from balance
+                
+                let card = self.pop_card();
+                let hand = &mut self.player_hands[self.current_hand];
+                hand.push(card);
+
+                if hand.is_bust() {
+                    println!("Hand is bust after doubling down: {}", hand);
+                }
+                self.current_hand += 1; // Move to the next hand after doubling down
             }
             PlayerChoice::Split => {
+                self.player_bet.insert(self.current_hand + 1, self.initial_wager);
+                *balance -= self.initial_wager; // Deduct the bet for the split hands
+                
                 // Split the hand into two hands
-                if !self.config.player_can_split(&self.player_hands) {
-                    return Err(Error::CannotSplit);
-                }
                 let hand = self.player_hands.pop().unwrap();
-                let (new_hand1, new_hand2) = hand.split();
+                let (mut new_hand1, new_hand2) = hand.split();
+                // Deal the next card to the first new hand
+                let card1 = self.pop_card();
+                new_hand1.push(card1);
 
                 self.player_hands.push(new_hand1);
                 self.player_hands.push(new_hand2);
@@ -154,12 +167,11 @@ impl Game {
             PlayerChoice::Surrender => {
                 // Handle surrender logic
                 // This could mean the player loses half their bet
-                self.player_bet /= 2;
+                self.player_bet.insert(self.current_hand, self.initial_wager / 2);
+
                 self.current_hand += 1; // Move to the next hand
             }
         }
-
-        Ok(())
     }
 
     pub fn all_player_hands_busted(&self) -> bool {
@@ -181,6 +193,7 @@ impl Game {
                 break; // Dealer busts, no more actions needed
             }
         }
+        println!("Dealer has {}", self.dealer_hand.value());
         self.dealer_hand.hide_card = false; // Dealer reveals all cards after playing
     }
     pub fn reveal_dealer_hand(&mut self) {
@@ -189,7 +202,20 @@ impl Game {
     fn dealer_can_hit(&self) -> bool {
         !self.dealer_hand.is_bust()
     }
-
+    pub fn dealer_has_blackjack(&self) -> bool {
+        self.dealer_hand.is_blackjack()
+    }
+    pub fn player_has_blackjack(&self) -> bool {
+        if self.player_hands.is_empty() {
+            return false; // No player hands to check
+        }
+        let current_hand = self.player_hands.get(self.current_hand);
+        if current_hand.is_none() {
+            return false; // No current hand to check
+        }
+        let current_hand = current_hand.unwrap();
+        current_hand.is_blackjack()
+    }
     pub fn dealer_up_card(&self) -> Card {
         self.dealer_hand.cards.get(1).cloned().unwrap()
     }
@@ -210,12 +236,20 @@ impl Game {
         self.dealer_hand = Hand::new(true);
         self.player_hands.clear();
         self.current_hand = 0;
-        self.player_bet = 0;
+        self.player_bet.clear();
+        self.initial_wager = 0;
         self.shoe_needs_shuffling = false;
     }
 
     fn deal_starting_hands(&mut self) {
-        (self.dealer_hand, self.shoe_needs_shuffling) = self.reserves.deal_hand(2, true);
+        if self.shoe_needs_shuffling {
+            self.reserves = Deck::create_shoe(self.config.reserve_decks as usize);
+            self.shoe_needs_shuffling = false; // Reset the flag after shuffling
+        }
+        let (dealer_hand, reshuffle) = self.reserves.deal_hand(2, true);
+        self.shoe_needs_shuffling |= reshuffle;
+        self.dealer_hand = dealer_hand;
+
         let (player_hand, reshuffle) = self.reserves.deal_hand(2, false);
         self.shoe_needs_shuffling |= reshuffle;
         self.player_hands.clear();
@@ -236,7 +270,7 @@ impl Game {
         choices.insert(PlayerChoices::HIT);
         choices.insert(PlayerChoices::STAND);
 
-        if self.config.player_can_split(&self.player_hands) {
+        if self.config.player_can_split(&self.player_hands, self.current_hand) {
             choices.insert(PlayerChoices::SPLIT);
         }
         if self.config.player_can_double_down(&current_hand) {
@@ -252,40 +286,43 @@ impl Game {
 
 impl std::fmt::Display for Game {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "=== BLACKJACK GAME ===")?;
+        writeln!(f, "=== BLACKJACK ===")?;
+        writeln!(f, "Wager: ${}", self.initial_wager)?;
         writeln!(f)?;
         
         // Dealer's hand
         writeln!(f, "DEALER:")?;
-        writeln!(f, "  {}", self.dealer_hand)?;
+        if self.dealer_hand.dealer_show_card().is_blackjack_card() && !self.dealer_hand.is_blackjack() {
+            writeln!(f, "  {} (Not blackjack)", self.dealer_hand)?;
+        } else {
+            writeln!(f, "  {}", self.dealer_hand)?;
+        }
         writeln!(f)?;
         
         // Player's hands
         if self.player_hands.len() == 1 {
-            writeln!(f, "PLAYER (Bet: ${}):", self.player_bet)?;
+            writeln!(f, "PLAYER")?;
             writeln!(f, "  {}", self.player_hands[0])?;
         } else {
-            writeln!(f, "PLAYER HANDS (Bet: ${} each):", self.player_bet)?;
+            writeln!(f, "PLAYER HANDS:")?;
             for (i, hand) in self.player_hands.iter().enumerate() {
+                let wager = self.player_bet.get(&i).unwrap();
                 let marker = if i == self.current_hand { " <- CURRENT" } else { "" };
-                writeln!(f, "  Hand {}: {}{}", i + 1, hand, marker)?;
+                writeln!(f, "  ${} Hand {}: {}{}", wager, i + 1, hand, marker)?;
             }
         }
         writeln!(f)?;
         
         // Game status
-        writeln!(f, "Cards remaining: {}", self.reserves.cards.len())?;
+        let cards_left = self.reserves.cards.len();
+        let decks_left = (cards_left / 52) as isize;
+        let running_count = self.reserves.count;
+        let true_count = running_count / decks_left;
+        writeln!(f, "Cards remaining: {}, Running Count: {}, True Count: {}, Decks left {}", cards_left, running_count, true_count, decks_left)?;
         if self.shoe_needs_shuffling {
             writeln!(f, "⚠️  SHUFFLE NEEDED")?;
         }
         
         Ok(())
-    }
-}
-
-impl std::fmt::Debug for Game {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Game {{ dealer_hand: {:?}, player_hands: {:?}, current_hand: {}, player_bet: {}, shoe_needs_shuffling: {} }}",
-               self.dealer_hand, self.player_hands, self.current_hand, self.player_bet, self.shoe_needs_shuffling)
     }
 }

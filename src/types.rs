@@ -24,11 +24,11 @@ pub enum PlayerChoice {
 impl PlayerChoice {
     pub fn parse_choice(input: &str, choices: PlayerChoices) -> Result<Self, Error> {
         let choice = match input.trim().to_uppercase().as_str() {
-            "H" => PlayerChoice::Hit,
-            "S" => PlayerChoice::Stand,
-            "D" => PlayerChoice::Double,
-            "P" => PlayerChoice::Split,
-            "R" => PlayerChoice::Surrender,
+            "H" | "1" => PlayerChoice::Hit,
+            "S" | "2" => PlayerChoice::Stand,
+            "D" | "3" => PlayerChoice::Double,
+            "P" | "4" => PlayerChoice::Split,
+            "R" | "5" => PlayerChoice::Surrender,
             x => return Err(Error::InvalidInput(x.to_string())),
         };
         if choices.contains(choice.into()) {
@@ -76,6 +76,7 @@ impl From<PlayerChoice> for PlayerChoices {
 
 pub struct Deck {
     pub cards: Vec<Card>,
+    pub count: isize
 }
 
 impl Deck {
@@ -87,7 +88,7 @@ impl Deck {
             cards.extend(deck.cards);
         }
         cards.shuffle(&mut thread_rng());
-        let mut this = Self { cards };
+        let mut this = Self { cards, count: 0 };
         this.place_cut_card();
         this
     }
@@ -107,6 +108,9 @@ impl Deck {
     /// Draw a card and bool is true if the cut card was drawn
     pub fn draw(&mut self) -> (Card, bool) {
         let card = self.cards.pop().unwrap();
+        let card_count = card.count();
+        self.count += card_count; // Update the count based on the card drawn
+
         if card.cut_card {
             // Take the next card after the cut card
             (self.cards.pop().unwrap(), true)
@@ -131,6 +135,7 @@ impl Deck {
         };
         let random_offset = (rand::random::<isize>() % 11) - 5; // Random offset between -5 and 5
         let cut_card_position = (position as isize + random_offset) as usize;
+        let cut_card_position = total_cards - cut_card_position;
 
         self.cards.insert(cut_card_position, Card {
             suit: Suit::Spades, // Cut card doesn't have a suit
@@ -146,7 +151,8 @@ impl std::ops::Add for Deck {
     fn add(self, other: Self) -> Self {
         let mut cards = self.cards;
         cards.extend(other.cards);
-        Self { cards }
+
+        Self { cards, count: self.count + other.count }
     }
 }
 
@@ -183,6 +189,33 @@ impl Hand {
         }
         value
     }
+    pub fn is_soft(&self) -> bool {
+        let mut value = 0;
+        let mut aces = 0;
+        let mut aces_as_eleven = 0;
+        
+        // Calculate non-ace values first
+        for card in self.cards.iter() {
+            match card.face {
+                CardFace::Ace => aces += 1,
+                CardFace::Number(n) => value += n,
+                CardFace::Face(_) => value += 10,
+            }
+        }
+        
+        // Add aces, tracking how many are counted as 11
+        for _ in 0..aces {
+            if value + 11 <= 21 {
+                value += 11;
+                aces_as_eleven += 1;
+            } else {
+                value += 1;
+            }
+        }
+        
+        // Hand is soft if at least one ace is counted as 11
+        aces_as_eleven > 0
+    }
     fn show_value(&self) -> u8 {
         if self.hide_card {
             return self.dealer_show_card().face_value();
@@ -190,9 +223,6 @@ impl Hand {
         self.value()
     }
 
-    pub fn is_soft(&self) -> bool {
-        self.cards.iter().any(|card| card.face == CardFace::Ace) && self.value() <= 21
-    }
     pub fn is_blackjack(&self) -> bool {
         self.cards.len() == 2 && self.value() == 21 && self.cards.iter().any(|card| card.face == CardFace::Ace)
     }
@@ -250,7 +280,7 @@ impl Default for Deck {
                 });
             }
         }
-        Self { cards }
+        Self { cards, count: 0 }
     }
 }
 
@@ -267,6 +297,23 @@ impl Card {
             CardFace::Ace => 11, // Ace is worth 11 by default
             CardFace::Number(n) => n,
             CardFace::Face(_) => 10, // Face cards are worth 10
+        }
+    }
+    pub fn is_blackjack_card(&self) -> bool {
+        self.face == CardFace::Ace || matches!(self.face, CardFace::Face(_))
+    }
+    pub fn count(&self) -> isize {
+        if self.cut_card {
+            0 // Cut card does not count towards the deck
+        } else {
+            match self.face {
+                CardFace::Ace => -1,
+                CardFace::Number(2..=6) => 1,
+                CardFace::Number(7..=9) => 0, // Number cards 7-10 have 2 copies
+                CardFace::Number(10) => -1, // 10 has 4 copies
+                CardFace::Face(_) => -1, // Each face card has 4 copies
+                CardFace::Number(_) => panic!("Unexpected card number"),
+            }
         }
     }
 }
@@ -318,7 +365,9 @@ impl Display for Hand {
                     .map(|card| card.to_string())
                     .collect();
                 let value = self.value();
-                let value = if self.is_soft() {
+                let value = if self.is_blackjack() {
+                    "Blackjack".to_string()
+                } else if self.is_soft() {
                     format!("Soft {}", value)
                 } else {
                     value.to_string()

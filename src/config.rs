@@ -43,14 +43,14 @@ impl GameConfig {
             DealerRules::HitOnSoft17 => dealer_hand.value() < 17,
         }
     }
-    pub fn player_can_split(&self, hands: &[Hand]) -> bool {
+    pub fn player_can_split(&self, hands: &[Hand], current_hand: usize) -> bool {
         if hands.len() >= self.player_splits {
             return false; // Cannot split more than allowed
         }
         if hands.is_empty() {
             return false; // No hands to split
         }
-        let last_hand = &hands[hands.len() - 1];
+        let last_hand = &hands[current_hand];
         last_hand.can_split() // Check if the last hand can be split
     }
 
@@ -85,7 +85,7 @@ impl Default for GameConfig {
             reserve_decks: 6,
             
             // More common house rule (slightly favors house)
-            dealer_rules: DealerRules::HitOnSoft17,
+            dealer_rules: DealerRules::StandOnSoft17,
             
             // Standard peek rule for player protection
             dealer_checks_for_blackjack: true,
