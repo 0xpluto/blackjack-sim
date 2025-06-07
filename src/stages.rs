@@ -6,7 +6,7 @@ use crate::{
 pub struct GameInPlay {
     pub game: Game,
     stage: Stage,
-    balance: u32,
+    pub balance: u32,
     original_bet: Option<u32>,
 }
 
@@ -108,6 +108,13 @@ impl GameInPlay {
         self.stage = Stage::CheckWinConditions; // Dealer or player could have blackjack
     }
 
+    pub fn new_table(&mut self) {
+        self.game = Game::new(self.game.config.clone());
+        self.balance = self.balance;
+        self.stage = Stage::Start;
+        self.original_bet = None;
+    }
+
     pub fn terminate(&mut self) {
         self.stage = Stage::Exiting;
     }
@@ -133,6 +140,7 @@ impl std::fmt::Display for GameInPlay {
             }
             Stage::Payout(cards) => {
                 writeln!(f, "{}", self.game)?;
+                writeln!(f, "Balance: ${}", self.balance)?;
                 for card in cards {
                     writeln!(f, "Dealer draws: {}", card)?;
                 }
@@ -143,13 +151,16 @@ impl std::fmt::Display for GameInPlay {
             }
             Stage::DealerTurn => {
                 writeln!(f, "{}", self.game)?;
+                writeln!(f, "Balance: ${}", self.balance)?;
                 writeln!(f, "Dealer's turn is in progress. Please wait...")
             }
             Stage::CheckWinConditions => {
-                writeln!(f, "{}", self.game)
+                writeln!(f, "{}", self.game)?;
+                writeln!(f, "Balance: ${}", self.balance)
             }
             Stage::HandOver => {
                 writeln!(f, "{}", self.game)?;
+                writeln!(f, "Balance: ${}", self.balance)?;
                 let payout = self.game.player_payout();
                 let total_bet = self.game.player_total_bet();
                 if payout > total_bet {

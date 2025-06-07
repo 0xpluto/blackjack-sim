@@ -1,69 +1,65 @@
 use blackjack_sim::{
     config::GameConfig,
     game::Game,
-    input::{get_player_bet, get_player_choice, wait_for_player_input},
-    stages::{GameInPlay, InputNeeded}, strategy::BasicStrategy,
+    stages::{GameInPlay, InputNeeded}, strategy::PlayMode,
 };
 
 fn main() {
     clear_screen();
     let args: Vec<String> = std::env::args().collect();
 
-    let use_basic = if args.contains(&String::from("-b")) {
-        true
-    } else {
-        false
-    };
+    let play_mode = PlayMode::from_args(&args);
 
     let config = GameConfig::default();
     let game = Game::new(config);
-    let balance = 1000;
+    let balance = 10000;
 
     let mut game = GameInPlay::new(game, balance);
+    let mut hands_played = 0;
 
     loop {
         match game.advance() {
             Some(InputNeeded::Bet) => {
                 println!("{}", game);
-                let bet = if use_basic {
-                    100
-                } else {
-                    get_player_bet()
-                };
+                println!("Hands played: {}", hands_played);
+                let mut bet = play_mode.bet(game.balance, game.game.true_count());
                 println!("{}", game);
+                println!("Hands played: {}", hands_played);
                 if bet == 0 {
-                    game.terminate();
+                    println!("Going to new table...");
+                    game.new_table();
+                    bet = play_mode.bet(game.balance, game.game.true_count());
                 }
                 game.bet(bet);
                 println!("{}", game);
             }
             Some(InputNeeded::Choice) => {
                 println!("{}", game);
+                println!("Hands played: {}", hands_played);
                 let choices = game.game.player_choices();
-                let choice = if use_basic {
-                    let hand = game.game.player_current_hand();
-                    let dealer_card = game.game.dealer_up_card();
-                    let choice = BasicStrategy::choice(hand, &dealer_card, choices);
-                    println!("Basic strategy suggests: {}", choice);
-                    wait_for_player_input(use_basic);
-                    choice
-                } else {
-                    get_player_choice(choices)
-                };
+                let hand = game.game.player_current_hand();
+                let dealer_card = game.game.dealer_up_card();
+                let true_count = game.game.true_count();
+                let choice = play_mode.choice(choices, &hand, &dealer_card, true_count);
+                
                 game.player_move(choice);
             }
             Some(InputNeeded::HandOver) => {
+                hands_played += 1;
                 println!("{}", game);
-                wait_for_player_input(use_basic);
+                println!("Hands played: {}", hands_played);
+                play_mode.wait_for_player_input();
             }
             None => {
                 println!("{}", game);
-                wait_for_player_input(use_basic);
+                println!("Hands played: {}", hands_played);
+                play_mode.wait_for_player_input();
             }
         }
         clear_screen();
     }
 }
+
 
 fn clear_screen() {
     // This function clears the console screen.

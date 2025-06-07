@@ -23,7 +23,7 @@ pub struct Game {
     /// Indicates if the shoe needs to be shuffled
     shoe_needs_shuffling: bool,
 
-    config: GameConfig,
+    pub config: GameConfig,
 }
 
 impl Game {
@@ -123,8 +123,17 @@ impl Game {
         !self.player_choices().is_empty()
     }
 
-    pub fn player_current_hand(&self) -> &Hand {
-        self.player_hands.get(self.current_hand).unwrap()
+    pub fn player_current_hand(&mut self) -> Hand {
+        let hand = self.player_hands.get(self.current_hand).unwrap().clone();
+        if hand.cards.len() < 2 {
+            let card = self.pop_card();
+            let hand_mut = self.player_hands.get_mut(self.current_hand).unwrap();
+            // If the current hand has less than 2 cards, we need to deal another card
+            hand_mut.push(card);
+            hand_mut.clone() // Return the updated hand
+        } else {
+            hand // Return the current hand as is
+        }
     }
 
     /// Returns true if the player's turn is over
@@ -171,7 +180,7 @@ impl Game {
                 }
             }
             PlayerChoice::Split => {
-                self.player_bet.insert(self.current_hand + 1, self.initial_wager);
+                self.player_bet.insert(self.player_hands.len(), self.initial_wager);
                 *balance -= self.initial_wager; // Deduct the bet for the split hands
                 
                 // Split the hand into two hands
@@ -300,6 +309,22 @@ impl Game {
         }
 
         choices
+    }
+    pub fn cards_left(&self) -> usize {
+        self.reserves.cards.len()
+    }
+    pub fn decks_left(&self) -> isize {
+        (self.cards_left() / 52) as isize
+    }
+    pub fn running_count(&self) -> isize {
+        self.reserves.count
+    }
+    pub fn true_count(&self) -> isize {
+        let decks_left = self.decks_left();
+        if decks_left == 0 {
+            return 0; // Avoid division by zero
+        }
+        self.running_count() / decks_left
     }
 }
 

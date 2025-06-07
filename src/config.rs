@@ -1,6 +1,6 @@
 use crate::types::Hand;
 
-
+#[derive(Clone)]
 pub struct GameConfig {
     /// Number of decks in the shoe
     pub reserve_decks: usize,
@@ -112,6 +112,7 @@ impl Default for GameConfig {
     }
 }
 
+#[derive(Clone)]
 pub enum PayoutOdds {
     /// Pays $15 for a $10 bet
     ThreeToTwo,
@@ -131,6 +132,7 @@ impl PayoutOdds {
     }
 }
 
+#[derive(Clone)]
 pub enum DealerRules {
     /// Dealer stands on soft 17
     StandOnSoft17,
@@ -138,6 +140,7 @@ pub enum DealerRules {
     HitOnSoft17,
 }
 
+#[derive(Clone)]
 pub enum DoublingDownRules {
     /// Player can double down on any two cards
     DoubleAny,
@@ -145,6 +148,7 @@ pub enum DoublingDownRules {
     DoubleOnlyOn9To11,
 }
 
+#[derive(Clone)]
 pub enum SurrenderRules {
     /// Player can surrender at any time
     EarlySurrender,
