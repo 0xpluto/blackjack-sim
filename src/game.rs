@@ -7,7 +7,7 @@ pub struct Game {
     /// Cards in the shoe
     reserves: Deck,
     /// Dealer's hand
-    dealer_hand: Hand,
+    pub dealer_hand: Hand,
 
     /// Player's hands
     player_hands: Vec<Hand>,
@@ -37,8 +37,14 @@ impl Game {
         this
     }
 
+    pub fn has_started(&self) -> bool {
+        self.initial_wager != 0
+    }
+
     pub fn start_game(&mut self, player_wager: u32, balance: &mut u32) {
         self.reset_game_state();
+
+        assert!(player_wager > 0, "Player wager must be greater than zero");
 
         self.player_bet.insert(0, player_wager); // Store the wager for the first hand
         self.initial_wager = player_wager;
@@ -72,7 +78,11 @@ impl Game {
         total_winnings
     }
 
-    fn player_wins(&self, hand: usize) -> HandResult {
+    pub fn player_total_bet(&self) -> u32 {
+        self.player_bet.values().sum()
+    }
+
+    pub fn player_wins(&self, hand: usize) -> HandResult {
         let player_hand = &self.player_hands[hand];
         let dealer_hand = &self.dealer_hand;
         let player_has_blackjack = player_hand.is_blackjack();
@@ -183,18 +193,15 @@ impl Game {
         true // All hands are bust
     }
 
-    pub fn play_dealer_hand(&mut self) {
+    pub fn play_dealer_hand(&mut self) -> Vec<Card> {
+        let mut dealer_cards = Vec::new();
         while self.config.dealer_should_hit(&self.dealer_hand) && self.dealer_can_hit() {
             let card = self.pop_card();
-            println!("Dealer draws: {}", card);
-            self.dealer_hand.push(card);
-            if self.dealer_hand.is_bust() {
-                println!("Dealer busts!");
-                break; // Dealer busts, no more actions needed
-            }
+            self.dealer_hand.push(card.clone());
+            dealer_cards.push(card);
         }
-        println!("Dealer has {}", self.dealer_hand.value());
         self.dealer_hand.hide_card = false; // Dealer reveals all cards after playing
+        dealer_cards
     }
     pub fn reveal_dealer_hand(&mut self) {
         self.dealer_hand.hide_card = false; // Reveal dealer's hand
@@ -202,7 +209,11 @@ impl Game {
     fn dealer_can_hit(&self) -> bool {
         !self.dealer_hand.is_bust()
     }
+    /// Only reveals if the dealer has blackjack if config allows it
     pub fn dealer_has_blackjack(&self) -> bool {
+        if !self.config.dealer_checks_for_blackjack && self.player_can_play() {
+            return false;
+        }
         self.dealer_hand.is_blackjack()
     }
     pub fn player_has_blackjack(&self) -> bool {
@@ -260,11 +271,9 @@ impl Game {
     pub fn player_choices(&self) -> PlayerChoices {
         let mut choices = PlayerChoices::empty();
 
-        let current_hand = &self.player_hands.get(self.current_hand);
-        if current_hand.is_none() {
+        if self.player_hands.get(self.current_hand).is_none() {
             return choices; // No current hand to play
         }
-        let current_hand = current_hand.unwrap();
 
         // Always allow hit and stand
         choices.insert(PlayerChoices::HIT);
@@ -273,7 +282,7 @@ impl Game {
         if self.config.player_can_split(&self.player_hands, self.current_hand) {
             choices.insert(PlayerChoices::SPLIT);
         }
-        if self.config.player_can_double_down(&current_hand) {
+        if self.config.player_can_double_down(&self.player_hands, self.current_hand) {
             choices.insert(PlayerChoices::DOUBLE);
         }
         if self.config.player_can_surrender(&self.player_hands) {

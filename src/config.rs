@@ -54,9 +54,13 @@ impl GameConfig {
         last_hand.can_split() // Check if the last hand can be split
     }
 
-    pub fn player_can_double_down(&self, hand: &Hand) -> bool {
+    pub fn player_can_double_down(&self, hands: &[Hand], current_hand: usize) -> bool {
+        let hand = &hands[current_hand];
         if hand.cards.len() != 2 {
             return false; // Can only double down on two cards
+        }
+        if hands.len() > 1 && !self.player_can_double_after_split {
+            return false; // Cannot double down after splitting if not allowed
         }
         match self.doubling_down_rules {
             DoublingDownRules::DoubleAny => true, // Can double down on any two cards

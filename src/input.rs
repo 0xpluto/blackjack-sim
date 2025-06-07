@@ -43,6 +43,12 @@ pub fn get_player_choice(choices: PlayerChoices) -> PlayerChoice {
     }
 }
 
+pub fn wait_for_player_input() {
+    println!("\nPress Enter to continue...");
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+}
+
 fn print_player_choices(choices: PlayerChoices) {
     println!("Available actions:");
     if choices.contains(PlayerChoices::HIT) {
